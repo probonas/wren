@@ -11,7 +11,13 @@ from wren.core import (
     get_task_file,
     get_tasks,
     mark_task_done,
+    mark_task_postponed,
+    mark_task_todo,
+    mark_task_cancelled,
     notes_dir,
+    postponed_dir,
+    cancelled_dir,
+    done_dir,
     config_file,
     data_dir,
     __version__,
@@ -25,13 +31,13 @@ def create_file(name):
     print("created task:", filename)
 
 
-def list_files(s=""):
-    tasks = get_tasks(s)
-    print("".join(map(lambda t: "➜ " + t + "\n", tasks))[:-1])
+def list_files(dir: str, bullet='➜', s=""):
+    tasks = get_tasks(dir)
+    print("".join(map(lambda t: bullet + " " + t + "\n", tasks))[:-1])
 
 
 def print_random():
-    tasks = get_tasks("")
+    tasks = get_tasks(notes_dir, "")
     print(choice(tasks))
 
 
@@ -41,7 +47,7 @@ def print_summary():
 
 
 def edit_content(name):
-    found, filename = get_task_file(name)
+    found, filename = get_task_file(name, notes_dir)
     if found:
         filepath = os.path.join(notes_dir, filename)
         subprocess.run([editor, filepath])
@@ -56,6 +62,21 @@ def mark_done(name):
     message = mark_task_done(name)
     print(message)
 
+def mark_postponed(name):
+    message = mark_task_postponed(name)
+    print(message)
+
+def mark_todo(name):
+    message = mark_task_todo(name)
+    print(message)
+
+
+def mark_cancelled(name):
+    message = mark_task_cancelled(name)
+    print(message)
+
+def flat_map_args(args: list) -> str:
+    return " ".join(args).strip()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -65,19 +86,28 @@ def main():
         "--ls",
         "--list",
         type=str,
-        help="List all current tasks",
+        help="List all current tasks. Add -d/-c/-p to list done, cancelled or postponed tasks",
         nargs="?",
         const="",
         default=None,
     )
     parser.add_argument(
-        "-d", "--done", metavar="foo", type=str, help="Mark a task as done"
+        "-d", "--done", metavar="foo", type=str, nargs="+", help="Mark a task as done"
     )
     parser.add_argument(
-        "-r", "--read", metavar="foo", type=str, help="Read a task content"
+        "-p", "--postpone", metavar="foo", type=str, nargs="+", help="Postpone a task for the time being"
     )
     parser.add_argument(
-        "-e", "--edit", metavar="foo", type=str, help="Edit a task content"
+        "-t", "--todo", metavar="foo", type=str, nargs="+", help="Move a postponed task to current"
+    )
+    parser.add_argument(
+        "-c", "--cancel", metavar="foo", type=str, nargs="+", help="Mark a postponed task as canceled"
+    )
+    parser.add_argument(
+        "-r", "--read", metavar="foo", nargs="+", type=str, help="Read a task content"
+    )
+    parser.add_argument(
+        "-e", "--edit", metavar="foo", nargs="+", type=str, help="Edit a task content"
     )
     parser.add_argument(
         "-o", "--one", action="store_true", help="Print one random task"
@@ -91,8 +121,14 @@ def main():
 
     args = parser.parse_args()
 
-    if args.ls != None:
-        list_files(args.ls)
+    if args.ls != None and args.postpone != None:
+        list_files(postponed_dir, bullet="?")
+    elif args.ls != None and args.cancel != None:
+        list_files(cancelled_dir, bullet="✘")
+    elif args.ls != None and args.done != None:
+        list_files(done_dir, bullet="✔")
+    elif args.ls != None:
+        list_files(notes_dir)
     elif args.version:
         print("Wren " + __version__)
         print("\nconfig: " + config_file)
@@ -108,18 +144,24 @@ def main():
     elif args.one:
         print_random()
     elif args.edit:
-        edit_content(args.edit)
+        edit_content(flat_map_args(args.edit))
     elif args.summary:
         print_summary()
     elif args.read:
-        read_content(args.read)
+        read_content(flat_map_args(args.read))
     elif args.done:
-        mark_done(args.done)
+        mark_done(flat_map_args(args.done))
+    elif args.postpone:
+        mark_postponed(flat_map_args(args.postpone))
+    elif args.todo:
+        mark_todo(flat_map_args(args.todo))
+    elif args.cancel:
+        mark_cancelled(flat_map_args(args.cancel))
     else:
         if args.task:
             create_file(" ".join(args.task))
         else:
-            list_files()
+            list_files(notes_dir)
 
 
 if __name__ == "__main__":

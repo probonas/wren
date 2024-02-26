@@ -19,6 +19,8 @@ messages_log = os.path.join(data_dir, "messages.json")
 config = {
     "notes_dir": "~/Notes",
     "done_dir": "~/Notes/done",
+    "postponed_dir": "~/Notes/postponed",
+    "cancelled_dir": "~/Notes/cancelled",
     "http_user": "",
     "http_password": "",
     "openai_token": "",
@@ -43,6 +45,8 @@ def parse_path(p, base=""):
 
 notes_dir = parse_path(config["notes_dir"])
 done_dir = parse_path(config["done_dir"], notes_dir)
+postponed_dir = parse_path(config["postponed_dir"], notes_dir)
+cancelled_dir = parse_path(config["cancelled_dir"], notes_dir)
 
 now = datetime.now()
 
@@ -55,7 +59,8 @@ def mkdir(path: str) -> None:
 mkdir(data_dir)
 mkdir(notes_dir)
 mkdir(done_dir)
-
+mkdir(postponed_dir)
+mkdir(cancelled_dir)
 
 # Common API
 
@@ -68,17 +73,17 @@ def create_new_task(content: str) -> str:
     return filename
 
 
-def get_tasks(query="") -> list[str]:
+def get_tasks(dir: str, query="") -> list[str]:
     global now
     now = datetime.now()
     return [
         format_task_name(file)
         for file in sorted(
-            os.listdir(notes_dir),
-            key=lambda x: os.path.getctime(os.path.join(notes_dir, x)),
+            os.listdir(dir),
+            key=lambda x: os.path.getctime(os.path.join(dir, x)),
             reverse=True,
         )
-        if os.path.isfile(os.path.join(notes_dir, file))
+        if os.path.isfile(os.path.join(dir, file))
         and not file.startswith(".")
         and query in file
         and is_present_task(file)
@@ -88,7 +93,7 @@ def get_tasks(query="") -> list[str]:
 def get_summary() -> str:
     url = "https://api.openai.com/v1/chat/completions"
     current_time = datetime.now().isoformat()
-    tasks = get_tasks()
+    tasks = get_tasks(notes_dir)
     current_message = {"role": "user", "content": f"{current_time}\n{tasks}"}
 
     try:
@@ -126,12 +131,12 @@ def get_summary() -> str:
     return response
 
 
-def get_task_file(name: str) -> tuple[bool, str]:
+def get_task_file(name: str, dir: str) -> tuple[bool, str]:
     matching_files = [
         file
-        for file in os.listdir(notes_dir)
+        for file in os.listdir(dir)
         if name.lower() in file.lower()
-        and os.path.isfile(os.path.join(notes_dir, file))
+        and os.path.isfile(os.path.join(dir, file))
     ]
     if len(matching_files) == 1:
         return (True, matching_files[0])
@@ -142,7 +147,7 @@ def get_task_file(name: str) -> tuple[bool, str]:
 
 
 def mark_task_done(name: str) -> str:
-    found, filename = get_task_file(name)
+    found, filename = get_task_file(name, notes_dir)
     if found:
         if is_cron_task(filename):
             shutil.copy(
@@ -158,8 +163,57 @@ def mark_task_done(name: str) -> str:
     return response
 
 
+def mark_task_postponed(name: str) -> str:
+    found, filename = get_task_file(name, notes_dir)
+    if found:
+        if is_cron_task(filename):
+            shutil.copy(
+                os.path.join(notes_dir, filename), os.path.join(postponed_dir, filename)
+            )
+        else:
+            shutil.move(
+                os.path.join(notes_dir, filename), os.path.join(postponed_dir, filename)
+            )
+        response = f'marked "{filename}" as postponed'
+    else:
+        response = filename
+    return response
+
+def mark_task_todo(name: str) -> str:
+    found, filename = get_task_file(name, postponed_dir)
+    if found:
+        if is_cron_task(filename):
+            shutil.copy(
+                os.path.join(postponed_dir, filename), os.path.join(notes_dir, filename)
+            )
+        else:
+            shutil.move(
+                os.path.join(postponed_dir, filename), os.path.join(notes_dir, filename)
+            )
+        response = f'marked "{filename}" as TODO'
+    else:
+        response = filename
+    return response
+
+def mark_task_cancelled(name: str) -> str:
+    print(name)
+    found, filename = get_task_file(name, notes_dir)
+    if found:
+        if is_cron_task(filename):
+            shutil.copy(
+                os.path.join(notes_dir, filename), os.path.join(cancelled_dir, filename)
+            )
+        else:
+            shutil.move(
+                os.path.join(notes_dir, filename), os.path.join(cancelled_dir, filename)
+            )
+        response = f'marked "{filename}" as cancelled'
+    else:
+        response = filename
+    return response
+
 def get_task_content(name: str) -> str:
-    found, filename = get_task_file(name)
+    found, filename = get_task_file(name, notes_dir)
     if found:
         file_to_read = os.path.join(notes_dir, filename)
         with open(file_to_read, "r") as file:
